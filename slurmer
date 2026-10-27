@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+YAML_FILE="slurmer.yml"
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --yaml)
+            YAML_FILE="$2"
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: slurmer [--yaml <file.yml>]"
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown option: $1"
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+if [ ! -f "$YAML_FILE" ]; then
+    echo "Error: Configuration file '$YAML_FILE' not found."
+    exit 1
+fi
+
+if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+elif [ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]; then
+    source "$HOME/anaconda3/etc/profile.d/conda.sh"
+elif command -v conda &> /dev/null; then
+    CONDA_BASE=$(conda info --base 2>/dev/null)
+    [ -f "$CONDA_BASE/etc/profile.d/conda.sh" ] && source "$CONDA_BASE/etc/profile.d/conda.sh"
+fi
+
+PARSED_STEPS=$(python3 -c '
+import sys
+try:
+    with open(sys.argv[1], "r") as f:
+        lines = f.readlines()
+    steps = []
+    current = {}
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("-"):
+            if current:
+                steps.append(current)
+                current = {}
+            stripped = stripped.lstrip("- ").strip()
+        if ":" in stripped:
+            k, v = stripped.split(":", 1)
+            current[k.strip()] = v.strip().strip("\"'\''")
+    if current:
+        steps.append(current)
+    for s in steps:
+        script = s.get("script", "")
+        conda = s.get("conda", "")
+        if script:
+            print(f"{script}|{conda}")
+except Exception as e:
+    sys.stderr.write(f"Error parsing YAML: {e}\n")
+    sys.exit(1)
+' "$YAML_FILE")
+
+PREV_JOBID=""
+ACTIVE_CONDA=""
+
+while IFS='|' read -r script conda; do
+    [ -z "$script" ] && continue
+
+    if [ ! -f "$script" ]; then
+        echo "Error: Script '$script' does not exist."
+        exit 1
+    fi
+
+    if [ -n "$conda" ] && [ "$conda" != "null" ]; then
+        if [ "$ACTIVE_CONDA" != "$conda" ]; then
+            if [ -n "$ACTIVE_CONDA" ]; then
+                echo "Deactivating environment: $ACTIVE_CONDA"
+                conda deactivate
+            fi
+            echo "Activating environment: $conda"
+            conda activate "$conda"
+            ACTIVE_CONDA="$conda"
+        fi
+    else
+        if [ -n "$ACTIVE_CONDA" ]; then
+            echo "Deactivating environment: $ACTIVE_CONDA"
+            conda deactivate
+            ACTIVE_CONDA=""
+        fi
+    fi
+
+    SBATCH_CMD="sbatch"
+    if [ -n "$PREV_JOBID" ]; then
+        SBATCH_CMD="$SBATCH_CMD --dependency=afterok:$PREV_JOBID"
+    fi
+
+    SBATCH_OUTPUT=$($SBATCH_CMD "$script")
+    PREV_JOBID=$(echo "$SBATCH_OUTPUT" | grep -oE '[0-9]+' | tail -n 1)
+
+    if [ -z "$PREV_JOBID" ]; then
+        echo "Error: Failed to retrieve Job ID for '$script'."
+        exit 1
+    fi
+
+    echo "Submitted '$script' -> Job ID: $PREV_JOBID"
+
+done <<< "$PARSED_STEPS"
+
+if [ -n "$ACTIVE_CONDA" ]; then
+    echo "Deactivating environment: $ACTIVE_CONDA"
+    conda deactivate
+fi
+
+echo "Pipeline successfully submitted."

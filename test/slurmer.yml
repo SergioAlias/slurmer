@@ -1,0 +1,7 @@
+- script: "01_first.s"
+  conda: "conda01"
+
+- script: "02_second.s"
+  conda: "conda02"
+
+- script: "03_third.s"
