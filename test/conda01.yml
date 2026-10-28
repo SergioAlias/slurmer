@@ -1,0 +1,5 @@
+name: conda01
+channels:
+  - conda-forge
+  - defaults
+dependencies: []
