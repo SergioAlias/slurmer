@@ -1,8 +1,8 @@
 # Slurmer
 
-A lightweight bash script to automate sequential Slurm job submissions on your HPC with automatic dependency chaining (`--dependency=afterok`) and Conda environment management.
+A lightweight bash script to automate sequential Slurm job submissions on your HPC (using `--dependency=afterok`) with basic Conda environment management.
 
-> This is an *ad hoc* ¹ script intended for simple, linear pipelines. For large-scale or complex workflows, please use [Nextflow](https://www.nextflow.io/) or [Snakemake](https://snakemake.readthedocs.io/en/stable/).
+This is an *ad hoc* ¹ script intended for simple, linear pipelines. For large-scale or complex workflows, please use [Nextflow](https://www.nextflow.io/) or [Snakemake](https://snakemake.readthedocs.io/en/stable/).
 
 ¹ Works for me; might need some tuning for you.
 
